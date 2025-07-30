@@ -217,6 +217,13 @@
                       <option value="converted">Convertida</option>
                     </select>
                   </div>
+                  <div v-if="supervisorOptions.length > 1" class="flex items-center space-x-2">
+                    <label class="text-sm font-medium text-gray-700">Supervisor:</label>
+                    <select v-model="supervisorFilter" class="border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                      <option value="all">Todos</option>
+                      <option v-for="sup in supervisorOptions" :key="sup.id" :value="sup.id">{{ sup.name }}</option>
+                    </select>
+                  </div>
                   <div class="flex items-center space-x-2">
                     <label class="text-sm font-medium text-gray-700">Pesquisar:</label>
                     <input
@@ -226,7 +233,7 @@
                       class="border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
-                </div>  
+                </div>
                 <div class="overflow-x-auto">
                   <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -358,18 +365,34 @@ const uniqueProposals = computed(() => {
 
 const originFilter = ref('all')
 const searchQuery = ref('')
+const supervisorFilter = ref('all')
+const supervisorOptions = computed(() => {
+  const map = new Map()
+  uniqueProposals.value.forEach((p) => {
+    if (p.supervisorId) {
+      map.set(p.supervisorId, p.supervisorName || `Supervisor #${p.supervisorId}`)
+    }
+  })
+  return Array.from(map, ([id, name]) => ({ id, name }))
+})
 
 const selfLabel = computed(() => {
   const role = props.representative?.role || 'supervisor'
   return role === 'parceiro_comercial' ? 'Parceiro' : 'Supervisor'
 })
 
+const supervisorFilteredProposals = computed(() => {
+  if (supervisorFilter.value === 'all') return uniqueProposals.value
+  return uniqueProposals.value.filter((p) => String(p.supervisorId) === String(supervisorFilter.value))
+})
+
 const originFilteredProposals = computed(() => {
-  if (originFilter.value === 'all') return uniqueProposals.value
+  const list = supervisorFilteredProposals.value
+  if (originFilter.value === 'all') return list
   if (originFilter.value === 'converted') {
-    return uniqueProposals.value.filter((p) => p.status === 'Convertida')
+    return list.filter((p) => p.status === 'Convertida')
   }
-  return uniqueProposals.value.filter((p) =>
+  return list.filter((p) =>
     originFilter.value === 'self' ? p.origin === 'self' : p.origin === 'child'
   )
 })
