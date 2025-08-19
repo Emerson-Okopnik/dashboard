@@ -130,11 +130,9 @@ async function getTeamMembers(leaderId) {
     FROM clone_users_apprudnik
     WHERE is_active = true
       AND role IN ('vendedor', 'representante', 'representante_premium', 'preposto')
-      AND (
-        supervisor_id = $1 OR EXISTS (
-          SELECT 1 FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) sup
-          WHERE (sup->>'id')::int = $1
-        )
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) sup
+        WHERE (sup->>'id')::int = $1
       )
     ORDER BY name
   `
@@ -281,8 +279,29 @@ app.get(
   authorize("admin", "gerente_comercial", "supervisor", "parceiro_comercial", "representante_premium"),
   async (req, res) => {
     try {
-      const { period, startDate, endDate } = req.query
+      const { period, startDate, endDate, supervisorId, supervisor } = req.query
+      const leader = supervisorId || supervisor
       const { startDate: dateStart, endDate: dateEnd } = getDateRange(period, startDate, endDate)
+
+      let sellerFilter = ""
+      const params = [dateStart, dateEnd]
+      if (leader && leader !== "all") {
+        const teamIds = await getTeamHierarchyIds(leader)
+        if (teamIds.length > 0) {
+          sellerFilter = "AND u.id = ANY($3)"
+          params.push(teamIds)
+        } else {
+          sellerFilter = `
+            AND (
+              u.id = $3
+              OR EXISTS (
+                SELECT 1 FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem
+                WHERE (elem->>'id')::bigint = $3
+              )
+            )`
+          params.push(Number(leader))
+        }
+      }
 
       const revenueQuery = `
         SELECT
@@ -290,20 +309,30 @@ app.get(
           SUM(CASE WHEN s.status <> 'suspenso' THEN CAST(p.total_price AS DECIMAL) END) as revenue
         FROM clone_propostas_apprudnik p
         JOIN clone_vendas_apprudnik s ON s.code = p.id
+        JOIN clone_users_apprudnik u ON u.id = p.seller
         WHERE p.has_generated_sale = true
           AND p.created_at BETWEEN $1 AND $2
+          ${sellerFilter}
         GROUP BY 1
         ORDER BY 1;
       `
-      const revenueResult = await pool.query(revenueQuery, [dateStart, dateEnd])
+      const revenueResult = await pool.query(revenueQuery, params)
+
+      let targetFilter = ""
+      const targetParams = [dateStart, dateEnd]
+      if (leader && leader !== "all") {
+        targetFilter = "AND m.usuario_id = $3"
+        targetParams.push(Number(leader))
+      }
 
       const targetQuery = `
       SELECT to_char(date_trunc('month', m.data_inicio), 'YYYY-MM') as month, SUM(m.valor_meta) as target
       FROM metas_gerais m
       WHERE m.tipo_meta = 'faturamento' AND m.data_inicio BETWEEN $1 AND $2
+       ${targetFilter}
       GROUP BY 1 ORDER BY 1;
     `
-      const targetResult = await pool.query(targetQuery, [dateStart, dateEnd])
+     const targetResult = await pool.query(targetQuery, targetParams)
 
       const dataMap = new Map()
       revenueResult.rows.forEach((row) =>
@@ -2124,12 +2153,10 @@ app.get("/api/users/:id/team", authenticateToken, async (req, res) => {
         SELECT id, name, email, role, is_active, created_at
         FROM clone_users_apprudnik
         WHERE is_active = true
-          AND (
-            supervisor_id = $1 OR EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) AS sup
-              WHERE (sup->>'id')::int = $1
-            )
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) AS sup
+            WHERE (sup->>'id')::int = $1
           )
         ORDER BY name
       `
