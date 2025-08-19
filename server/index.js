@@ -918,10 +918,16 @@ app.get("/api/performance/representative/:id", authenticateToken,
 
       // Get representative basic info
       const userQuery = `
-      SELECT u.*, s.name as supervisor_name
-      FROM clone_users_apprudnik u
-      LEFT JOIN clone_users_apprudnik s ON (u.supervisor)::bigint = s.id
-      WHERE u.id = $1
+        SELECT 
+            u.*, 
+            s.name AS supervisor_name
+        FROM clone_users_apprudnik u
+        LEFT JOIN LATERAL (
+            SELECT (elem->>'id')::bigint AS supervisor_id
+            FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem
+        ) sup_json ON true
+        LEFT JOIN clone_users_apprudnik s ON s.id = sup_json.supervisor_id
+        WHERE u.id = $1;
     `
       const userResult = await pool.query(userQuery, [id])
 
@@ -940,34 +946,51 @@ app.get("/api/performance/representative/:id", authenticateToken,
       const proposalsQuery = `
         SELECT
             p.id,
-            p.lead->>'name' AS client_name,
+            p.lead->>'name'  AS client_name,
             p.lead->>'phone' AS client_phone,
-            u.name AS proposer_name,
-            u.role AS proposer_role,
-            p.seller AS seller_id,
-            CASE WHEN p.seller = $2 THEN 'self' ELSE 'child' END AS origin,
+            u.name           AS proposer_name,
+            u.role           AS proposer_role,
+            p.seller         AS seller_id,
+            CASE WHEN p.seller = $2::bigint THEN 'self' ELSE 'child' END AS origin,
             p.total_price,
             p.has_generated_sale,
-            s.status AS sale_status,
+            s.status         AS sale_status,
             p.created_at,
             CASE
-                WHEN p.has_generated_sale = true THEN 'Convertida'
-                ELSE 'Pendente'
+              WHEN p.has_generated_sale = true THEN 'Convertida'
+              ELSE 'Pendente'
             END AS status,
-            (p.order_price_config->'seller'->>'parent_id')::int AS supervisor_id,
-            sup.name AS supervisor_name
-        FROM
-            clone_propostas_apprudnik p
-        JOIN
-            clone_users_apprudnik u ON p.seller = u.id
-        LEFT JOIN clone_users_apprudnik sup ON (p.order_price_config->'seller'->>'parent_id')::int = sup.id
-        LEFT JOIN clone_vendas_apprudnik s ON s.code = p.id
+            sup.id           AS supervisor_id,
+            sup.name         AS supervisor_name,
+            sup.role         AS supervisor_role
+
+        FROM clone_propostas_apprudnik p
+        JOIN clone_users_apprudnik u
+          ON p.seller = u.id
+
+        -- Extrai todos supervisores do JSON, ou o parent_id como fallback
+        LEFT JOIN LATERAL (
+            SELECT (elem->>'id')::bigint AS supervisor_id
+            FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem
+
+            UNION ALL
+
+            SELECT (p.order_price_config->'seller'->>'parent_id')::bigint
+            WHERE (u.supervisors IS NULL OR jsonb_array_length(u.supervisors) = 0)
+        ) sups ON true
+
+        LEFT JOIN clone_users_apprudnik sup
+          ON sup.id = sups.supervisor_id
+
+        LEFT JOIN clone_vendas_apprudnik s
+          ON s.code = p.id
+
         WHERE
-            p.seller = ANY($1)
-            AND p.created_at >= $3
-            AND p.created_at <= $4
-        ORDER BY
-           p.created_at DESC;
+          p.seller = ANY($1::bigint[])
+          AND p.created_at >= $3
+          AND p.created_at <= $4
+
+        ORDER BY p.created_at DESC;
       `
       const proposals = await pool.query(proposalsQuery, [sellerIds, id, dateStart, dateEnd])
 
