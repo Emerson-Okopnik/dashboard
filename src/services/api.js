@@ -1,4 +1,5 @@
 import axios from "axios"
+import { getCookie, setCookie, deleteCookie } from "../utils/cookies"
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api"
 const API_TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT) || 60000
@@ -11,6 +12,25 @@ const api = axios.create({
   },
   timeout: API_TIMEOUT,
 })
+
+function withCache(key, fetcher) {
+  const cached = getCookie(key)
+  if (cached) {
+    try {
+      return Promise.resolve({ data: JSON.parse(cached) })
+    } catch {
+      deleteCookie(key)
+    }
+  }
+  return fetcher().then((response) => {
+    try {
+      setCookie(key, JSON.stringify(response.data))
+    } catch {
+      // ignore cookie set errors
+    }
+    return response
+  })
+}
 
 // Add auth token to requests
 api.interceptors.request.use((config) => {
@@ -44,18 +64,57 @@ export const authService = {
 // Dashboard service
 export const dashboardService = {
   getVendedorDashboard: (id, period, startDate, endDate) =>
-    api.get(`/dashboard/vendedor/${id}`, { params: { period, startDate, endDate } }),
+    withCache(
+      `dashboard_vendedor_${id}_${period || ""}_${startDate || ""}_${endDate || ""}`,
+      () =>
+        api.get(`/dashboard/vendedor/${id}`, {
+          params: { period, startDate, endDate },
+        })
+    ),
   getRepresentanteDashboard: (id, period, startDate, endDate) =>
-    api.get(`/dashboard/representante/${id}`, { params: { period, startDate, endDate } }),
+    withCache(
+      `dashboard_representante_${id}_${period || ""}_${startDate || ""}_${endDate || ""}`,
+      () =>
+        api.get(`/dashboard/representante/${id}`, {
+          params: { period, startDate, endDate },
+        })
+    ),
   getSupervisorDashboard: (id, period, startDate, endDate) =>
-    api.get(`/dashboard/supervisor/${id}`, { params: { period, startDate, endDate } }),
+    withCache(
+      `dashboard_supervisor_${id}_${period || ""}_${startDate || ""}_${endDate || ""}`,
+      () =>
+        api.get(`/dashboard/supervisor/${id}`, {
+          params: { period, startDate, endDate },
+        })
+    ),
   getGerenteComercialDashboard: (filters) =>
-    api.get("/dashboard/gerente_comercial", { params: filters }),
+    withCache(
+      `dashboard_gerente_${JSON.stringify(filters || {})}`,
+      () => api.get("/dashboard/gerente_comercial", { params: filters })
+    ),
   getGestorDashboard: (period, startDate, endDate) =>
-    api.get("/dashboard/gerente_comercial", { params: { period, startDate, endDate } }),
-  getRevenueVsTarget: (filters) => api.get("/dashboard/revenue-vs-target", { params: filters }),
-  getRevenueBySupervisor: (filters) => api.get("/dashboard/revenue-by-supervisor", { params: filters }),
-  getProposalMetrics: (filters) => api.get("/dashboard/proposal-metrics", { params: filters }),
+    withCache(
+      `dashboard_gestor_${period || ""}_${startDate || ""}_${endDate || ""}`,
+      () =>
+        api.get("/dashboard/gerente_comercial", {
+          params: { period, startDate, endDate },
+        })
+    ),
+  getRevenueVsTarget: (filters) =>
+    withCache(
+      `dashboard_revenue_vs_target_${JSON.stringify(filters || {})}`,
+      () => api.get("/dashboard/revenue-vs-target", { params: filters })
+    ),
+  getRevenueBySupervisor: (filters) =>
+    withCache(
+      `dashboard_revenue_by_supervisor_${JSON.stringify(filters || {})}`,
+      () => api.get("/dashboard/revenue-by-supervisor", { params: filters })
+    ),
+  getProposalMetrics: (filters) =>
+    withCache(
+      `dashboard_proposal_metrics_${JSON.stringify(filters || {})}`,
+      () => api.get("/dashboard/proposal-metrics", { params: filters })
+    ),
 }
 
 // Goals service
