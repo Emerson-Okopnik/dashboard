@@ -269,12 +269,12 @@
                     <select id="leader" v-model="currentGoal.usuario_id" @change="onLeaderChange" required
                       class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
                       <option disabled value="">Selecione um líder</option>
-                      <option v-for="leader in teamLeaders" :key="leader.id" :value="leader.id">
-                        {{ leader.name }}
-                        <span :class="getSupervisorRoleBadgeClass(leader.role)" class="ml-1">
-                          ({{ getSupervisorRoleLabel(leader.role) }})
-                        </span>
-                        <span v-if="leader.has_team">- {{ leader.team_members_count }} membro(s)</span>
+                      <option
+                        v-for="leader in teamLeaders"
+                        :key="leader.id"
+                        :value="leader.id"
+                      >
+                        {{ leader.name }} ({{ getSupervisorRoleLabel(leader.role) }}){{ leader.has_team ? ' - ' + leader.team_members_count + ' membro(s)' : '' }}
                       </option>
                     </select>
 
@@ -446,11 +446,7 @@
                       class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
                       <option disabled value="">Selecione um usuário</option>
                       <option v-for="user in individualUsers" :key="user.id" :value="user.id">
-                        {{ user.name }}
-                        <span :class="getUserRoleBadgeClass(user.role)" class="ml-1">
-                          ({{ getUserRoleLabel(user.role) }})
-                        </span>
-                        <span v-if="user.direct_supervisor_name"> - Supervisor: {{ user.direct_supervisor_name }}</span>
+                        {{ user.name }} ({{ getUserRoleLabel(user.role) }}){{ user.direct_supervisor_name ? ' - Supervisor: ' + user.direct_supervisor_name : '' }}
                       </option>
                     </select>
                     <div class="mt-4">
@@ -463,10 +459,7 @@
                       >
                         <option disabled value="">Selecione um supervisor</option>
                         <option v-for="leader in teamLeaders" :key="leader.id" :value="leader.id">
-                          {{ leader.name }}
-                          <span :class="getSupervisorRoleBadgeClass(leader.role)" class="ml-1">
-                            ({{ getSupervisorRoleLabel(leader.role) }})
-                          </span>
+                          {{ leader.name }} ({{ getSupervisorRoleLabel(leader.role) }})
                         </option>
                       </select>
                     </div>
