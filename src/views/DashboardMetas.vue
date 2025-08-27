@@ -383,6 +383,10 @@
                           class="px-3 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500">
                           Por Performance
                         </button>
+                        <button v-if="currentGoal.periodType === 'month'" type="button" @click="distributePreviousGoals"
+                          class="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                          Meta Anterior
+                        </button>
                         <button v-if="currentGoal.tipo_meta !== 'taxa_conversao'" type="button" @click="clearAllGoals"
                           class="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500">
                           Limpar Tudo
@@ -888,12 +892,10 @@ const sortedTeamMembers = computed(() => {
 // Watch for changes in allUsers to update teamLeaders
 watch(allUsers, (newUsers) => {
   if (Array.isArray(newUsers)) {
-    teamLeaders.value = newUsers.filter(u =>
-      (
-        u.role === "supervisor" ||
-        u.role === "parceiro_comercial" ||
-        u.role === "representante_premium"
-      ) && u.is_active
+    teamLeaders.value = newUsers.filter(
+      u =>
+        (u.role === "supervisor" || u.role === "parceiro_comercial") &&
+        u.is_active
     )
   }
 }, { immediate: true })
@@ -980,8 +982,10 @@ const fetchTeamLeaders = async () => {
 
     // Ensure data is an array
     if (Array.isArray(data)) {
-      teamLeaders.value = data.filter(u =>
-        u.role === "supervisor" || u.role === "parceiro_comercial" || u.role === "representante_premium"
+      teamLeaders.value = data.filter(
+        u =>
+          (u.role === "supervisor" || u.role === "parceiro_comercial") &&
+          u.is_active
       )
     } else {
       console.warn('⚠️ Team leaders data is not an array:', data)
@@ -1233,6 +1237,79 @@ const distributeByPerformance = async () => {
   } catch (err) {
     console.error('❌ Error distributing by performance:', err)
     alert('Falha ao obter dados de performance para distribuição.')
+  }
+}
+
+const getPreviousPeriod = (period) => {
+  if (!period) return ''
+  const [year, month] = period.split('-').map(Number)
+  const date = new Date(year, month - 1, 1)
+  date.setMonth(date.getMonth() - 1)
+  const prevYear = date.getFullYear()
+  const prevMonth = String(date.getMonth() + 1).padStart(2, '0')
+  return `${prevYear}-${prevMonth}`
+}
+
+const distributePreviousGoals = async () => {
+  if (
+    !Array.isArray(teamMembers.value) ||
+    !currentGoal.value.usuario_id ||
+    currentGoal.value.periodType !== 'month' ||
+    !currentGoal.value.target_month
+  ) {
+    return
+  }
+  try {
+    const prevPeriod = getPreviousPeriod(currentGoal.value.target_month)
+    const { data } = await goalsService.getGoals(
+      prevPeriod,
+      undefined,
+      undefined,
+      currentGoal.value.usuario_id,
+      currentGoal.value.tipo_meta
+    )
+
+    let prevGoals = Array.isArray(data.individualGoals) ? data.individualGoals : []
+
+    // For each representante_premium in the team, also fetch their team goals
+    const repPremiumIds = Array.isArray(teamMembers.value)
+      ? teamMembers.value
+          .filter((m) => m.role === 'representante_premium')
+          .map((m) => m.id)
+      : []
+
+    if (repPremiumIds.length > 0) {
+      const promises = repPremiumIds.map((id) =>
+        goalsService.getGoals(prevPeriod, undefined, undefined, id, currentGoal.value.tipo_meta)
+      )
+      const results = await Promise.allSettled(promises)
+      results.forEach((res) => {
+        if (res.status === 'fulfilled') {
+          const goals = res.value.data?.individualGoals
+          if (Array.isArray(goals)) {
+            prevGoals = prevGoals.concat(goals)
+          }
+        }
+      })
+    }
+    let total = 0
+    teamMembers.value.forEach((member) => {
+      const prev = prevGoals.find(
+        (g) => Number(g.usuario_id) === Number(member.id) && g.tipo_meta === currentGoal.value.tipo_meta
+      )
+      const val = prev ? parseFloat(prev.valor_meta) : 0
+      member.goalAmount = val
+      member.hasError = false
+      member.errorMessage = ''
+      total += val
+    })
+    if (currentGoal.value.tipo_meta !== 'taxa_conversao') {
+      currentGoal.value.valor_meta = parseFloat(total.toFixed(2))
+    }
+    validateDistribution()
+  } catch (err) {
+    console.error('❌ Error distributing previous goals:', err)
+    alert('Falha ao obter metas anteriores para distribuição.')
   }
 }
 
