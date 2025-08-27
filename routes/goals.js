@@ -112,11 +112,9 @@ const getTeamMembers = async (leaderId) => {
       FROM clone_users_apprudnik
       WHERE is_active = true
         AND role IN ('vendedor', 'representante', 'representante_premium', 'preposto')
-        AND (
-          supervisor_id = $1 OR EXISTS (
-            SELECT 1 FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) sup
-            WHERE (sup->>'id')::int = $1
-          )
+        AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) sup
+          WHERE (sup->>'id')::int = $1
         )
       ORDER BY name
     `
@@ -182,8 +180,7 @@ router.get(
     if (supervisorId) {
       generalConditions.push(`g.usuario_id = $${generalParams.length + 1}`)
       generalParams.push(supervisorId)
-      individualConditions.push(`(u.supervisor_id = $${individualParams.length + 1} OR COALESCE(u.supervisors, '[]'::jsonb) @> $${individualParams.length + 2}::jsonb)`)
-      individualParams.push(supervisorId)
+      individualConditions.push(`COALESCE(u.supervisors, '[]'::jsonb) @> $${individualParams.length + 1}::jsonb`)
       individualParams.push(JSON.stringify([{ id: Number(supervisorId) }]))
     }
 

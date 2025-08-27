@@ -125,11 +125,9 @@ async function getTeamMembers(leaderId) {
     FROM clone_users_apprudnik
     WHERE is_active = true
       AND role IN ('vendedor', 'representante', 'representante_premium', 'preposto')
-      AND (
-        supervisor_id = $1 OR EXISTS (
-          SELECT 1 FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) sup
-          WHERE (sup->>'id')::int = $1
-        )
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) sup
+        WHERE (sup->>'id')::int = $1
       )
     ORDER BY name
   `
@@ -210,7 +208,6 @@ async function getTeamHierarchyIds(leaderId) {
             SELECT 1 FROM jsonb_array_elements(COALESCE(h.children, '[]'::jsonb)) c
             WHERE (c->>'id')::bigint = u.id
           )
-          OR u.supervisor_id = h.id
           OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) s
             WHERE (s->>'id')::bigint = h.id
@@ -222,6 +219,7 @@ async function getTeamHierarchyIds(leaderId) {
   const { rows } = await pool.query(query, [leaderId])
   return rows.map((r) => r.id)
 }
+
 
 // API Endpoints
 
@@ -276,8 +274,29 @@ app.get(
   authorize("admin", "gerente_comercial", "supervisor", "parceiro_comercial", "representante_premium"),
   async (req, res) => {
     try {
-      const { period, startDate, endDate } = req.query
+      const { period, startDate, endDate, supervisorId, supervisor } = req.query
+      const leader = supervisorId || supervisor
       const { startDate: dateStart, endDate: dateEnd } = getDateRange(period, startDate, endDate)
+
+      let sellerFilter = ""
+      const params = [dateStart, dateEnd]
+      if (leader && leader !== "all") {
+        const teamIds = await getTeamHierarchyIds(leader)
+        if (teamIds.length > 0) {
+          sellerFilter = "AND u.id = ANY($3)"
+          params.push(teamIds)
+        } else {
+          sellerFilter = `
+            AND (
+              u.id = $3
+              OR EXISTS (
+                SELECT 1 FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem
+                WHERE (elem->>'id')::bigint = $3
+              )
+            )`
+          params.push(Number(leader))
+        }
+      }
 
       const revenueQuery = `
         SELECT
@@ -285,20 +304,30 @@ app.get(
           SUM(CASE WHEN s.status <> 'suspenso' THEN CAST(p.total_price AS DECIMAL) END) as revenue
         FROM clone_propostas_apprudnik p
         JOIN clone_vendas_apprudnik s ON s.code = p.id
+        JOIN clone_users_apprudnik u ON u.id = p.seller
         WHERE p.has_generated_sale = true
           AND p.created_at BETWEEN $1 AND $2
+          ${sellerFilter}
         GROUP BY 1
         ORDER BY 1;
       `
-      const revenueResult = await pool.query(revenueQuery, [dateStart, dateEnd])
+      const revenueResult = await pool.query(revenueQuery, params)
+
+      let targetFilter = ""
+      const targetParams = [dateStart, dateEnd]
+      if (leader && leader !== "all") {
+        targetFilter = "AND m.usuario_id = $3"
+        targetParams.push(Number(leader))
+      }
 
       const targetQuery = `
       SELECT to_char(date_trunc('month', m.data_inicio), 'YYYY-MM') as month, SUM(m.valor_meta) as target
       FROM metas_gerais m
       WHERE m.tipo_meta = 'faturamento' AND m.data_inicio BETWEEN $1 AND $2
+       ${targetFilter}
       GROUP BY 1 ORDER BY 1;
     `
-      const targetResult = await pool.query(targetQuery, [dateStart, dateEnd])
+     const targetResult = await pool.query(targetQuery, targetParams)
 
       const dataMap = new Map()
       revenueResult.rows.forEach((row) =>
@@ -333,26 +362,37 @@ app.get(
       );
 
       const query = `
-      SELECT
-          sup.name AS supervisor_name,
-          COALESCE(SUM(CASE WHEN s.status <> 'suspenso' THEN p.total_price::DECIMAL END), 0) AS total_revenue
-      FROM clone_users_apprudnik sup
-      LEFT JOIN clone_users_apprudnik u
-        ON (
-            u.supervisor_id = sup.id OR EXISTS (
+        SELECT
+            sup.name AS supervisor_name,
+            COALESCE(
+              SUM(
+                CASE WHEN s.status <> 'suspenso' THEN p.total_price::DECIMAL END
+              ),
+              0
+            ) AS total_revenue
+        FROM clone_users_apprudnik sup
+        LEFT JOIN clone_users_apprudnik u
+          ON u.is_active = true
+        AND (
+              -- inclui o próprio supervisor
+              u.id = sup.id
+              -- inclui subordinados que tenham "sup" nos seus supervisors (JSON)
+              OR EXISTS (
                 SELECT 1
-            FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) AS elem
+                FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) AS elem
                 WHERE (elem->>'id')::bigint = sup.id
-            )
+              )
         )
-      LEFT JOIN clone_propostas_apprudnik p
-        ON u.id = p.seller
-       AND p.created_at BETWEEN $1 AND $2
-      LEFT JOIN clone_vendas_apprudnik s ON s.code = p.id AND p.has_generated_sale = true
-       WHERE sup.role IN ('supervisor', 'parceiro_comercial', 'representante_premium')
-        AND sup.is_active = true
-      GROUP BY sup.id, sup.name
-      ORDER BY total_revenue DESC;
+        LEFT JOIN clone_propostas_apprudnik p
+          ON u.id = p.seller
+        AND p.created_at BETWEEN $1 AND $2
+        LEFT JOIN clone_vendas_apprudnik s
+          ON s.code = p.id
+        AND p.has_generated_sale = true
+        WHERE sup.role IN ('supervisor', 'parceiro_comercial', 'representante_premium')
+          AND sup.is_active = true
+        GROUP BY sup.id, sup.name
+        ORDER BY total_revenue DESC;
       `;
 
       const { rows } = await pool.query(query, [dateStart, dateEnd]);
@@ -400,8 +440,15 @@ app.get(
           supervisorFilter = "AND u.id = ANY($3)";
           queryParams.push(teamIds);
         } else {
-          supervisorFilter =
-            "AND (u.supervisor_id = $3 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem WHERE (elem->>'id')::bigint = $3))";
+            supervisorFilter = `
+            AND (
+              u.id = $3
+              OR EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) AS elem
+                WHERE (elem->>'id')::bigint = $3
+              )
+            )`;
           queryParams.push(leader);
         }
       }
@@ -621,8 +668,15 @@ app.get(
           supervisorFilter = "AND u.id = ANY($3)"
           queryParams.push(teamIds)
         } else {
-          supervisorFilter =
-            "AND (u.id = $3 OR u.supervisor_id = $3 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem WHERE (elem->>'id')::bigint = $3))"
+          supervisorFilter = `
+            AND (
+              u.id = $3
+              OR EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) AS elem
+                WHERE (elem->>'id')::bigint = $3
+              )
+            )`;
           queryParams.push(supervisorIdNum)
         }
       }
@@ -878,10 +932,16 @@ app.get("/api/performance/representative/:id", authenticateToken,
 
       // Get representative basic info
       const userQuery = `
-      SELECT u.*, s.name as supervisor_name
-      FROM clone_users_apprudnik u
-      LEFT JOIN clone_users_apprudnik s ON (u.supervisor)::bigint = s.id
-      WHERE u.id = $1
+        SELECT 
+            u.*, 
+            s.name AS supervisor_name
+        FROM clone_users_apprudnik u
+        LEFT JOIN LATERAL (
+            SELECT (elem->>'id')::bigint AS supervisor_id
+            FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem
+        ) sup_json ON true
+        LEFT JOIN clone_users_apprudnik s ON s.id = sup_json.supervisor_id
+        WHERE u.id = $1;
     `
       const userResult = await pool.query(userQuery, [id])
 
@@ -900,34 +960,51 @@ app.get("/api/performance/representative/:id", authenticateToken,
       const proposalsQuery = `
         SELECT
             p.id,
-            p.lead->>'name' AS client_name,
+            p.lead->>'name'  AS client_name,
             p.lead->>'phone' AS client_phone,
-            u.name AS proposer_name,
-            u.role AS proposer_role,
-            p.seller AS seller_id,
-            CASE WHEN p.seller = $2 THEN 'self' ELSE 'child' END AS origin,
+            u.name           AS proposer_name,
+            u.role           AS proposer_role,
+            p.seller         AS seller_id,
+            CASE WHEN p.seller = $2::bigint THEN 'self' ELSE 'child' END AS origin,
             p.total_price,
             p.has_generated_sale,
-            s.status AS sale_status,
+            s.status         AS sale_status,
             p.created_at,
             CASE
-                WHEN p.has_generated_sale = true THEN 'Convertida'
-                ELSE 'Pendente'
+              WHEN p.has_generated_sale = true THEN 'Convertida'
+              ELSE 'Pendente'
             END AS status,
-            (p.order_price_config->'seller'->>'parent_id')::int AS supervisor_id,
-            sup.name AS supervisor_name
-        FROM
-            clone_propostas_apprudnik p
-        JOIN
-            clone_users_apprudnik u ON p.seller = u.id
-        LEFT JOIN clone_users_apprudnik sup ON (p.order_price_config->'seller'->>'parent_id')::int = sup.id
-        LEFT JOIN clone_vendas_apprudnik s ON s.code = p.id
+            sup.id           AS supervisor_id,
+            sup.name         AS supervisor_name,
+            sup.role         AS supervisor_role
+
+        FROM clone_propostas_apprudnik p
+        JOIN clone_users_apprudnik u
+          ON p.seller = u.id
+
+        -- Extrai todos supervisores do JSON, ou o parent_id como fallback
+        LEFT JOIN LATERAL (
+            SELECT (elem->>'id')::bigint AS supervisor_id
+            FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem
+
+            UNION ALL
+
+            SELECT (p.order_price_config->'seller'->>'parent_id')::bigint
+            WHERE (u.supervisors IS NULL OR jsonb_array_length(u.supervisors) = 0)
+        ) sups ON true
+
+        LEFT JOIN clone_users_apprudnik sup
+          ON sup.id = sups.supervisor_id
+
+        LEFT JOIN clone_vendas_apprudnik s
+          ON s.code = p.id
+
         WHERE
-            p.seller = ANY($1)
-            AND p.created_at >= $3
-            AND p.created_at <= $4
-        ORDER BY
-           p.created_at DESC;
+          p.seller = ANY($1::bigint[])
+          AND p.created_at >= $3
+          AND p.created_at <= $4
+
+        ORDER BY p.created_at DESC;
       `
       const proposals = await pool.query(proposalsQuery, [sellerIds, id, dateStart, dateEnd])
 
@@ -1197,7 +1274,12 @@ app.get(
       WHERE m.data_inicio <= $2 AND m.data_fim >= $1`
     const individualParams = [startDate, endDate]
     if (supId) {
-      individualGoalsQuery += ` AND (u.supervisor_id = $${individualParams.length + 1} OR COALESCE(u.supervisors, '[]'::jsonb) @> $${individualParams.length + 2}::jsonb)`
+      individualGoalsQuery += `
+        AND (
+          u.id = $${individualParams.length + 1}::bigint
+          OR COALESCE(u.supervisors, '[]'::jsonb) @> $${individualParams.length + 2}::jsonb
+        )
+      `;
       individualParams.push(supId)
       individualParams.push(JSON.stringify([{ id: supId }]))
     }
@@ -2034,12 +2116,10 @@ app.get("/api/users/:id/team", authenticateToken, async (req, res) => {
         SELECT id, name, email, role, is_active, created_at
         FROM clone_users_apprudnik
         WHERE is_active = true
-          AND (
-            supervisor_id = $1 OR EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) AS sup
-              WHERE (sup->>'id')::int = $1
-            )
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(supervisors, '[]'::jsonb)) AS sup
+            WHERE (sup->>'id')::int = $1
           )
         ORDER BY name
       `
@@ -2298,7 +2378,10 @@ app.get("/api/dashboard/gerente_comercial", authenticateToken, async (req, res) 
         params.push(teamIds)
       } else {
         const existsClause =
-           "AND (u.supervisor_id = $3 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem WHERE (elem->>'id')::bigint = $3))"
+          "AND (u.id = $3::bigint OR EXISTS (" +
+          "  SELECT 1 FROM jsonb_array_elements(COALESCE(u.supervisors, '[]'::jsonb)) elem" +
+          "  WHERE (elem->>'id')::bigint = $3::bigint" +
+          "))";
         sellerFilter = existsClause
         userFilter = existsClause
         params.push(supervisorId)
