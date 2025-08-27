@@ -21,11 +21,9 @@ app.use(cors())
 app.use(express.json())
 
 // Test database connection
-pool.query("SELECT NOW()", (err, res) => {
+pool.query("SELECT NOW()", (err) => {
   if (err) {
     console.error("❌ Database connection failed:", err.message)
-  } else {
-    console.log("✅ Database connected successfully!")
   }
 })
 
@@ -77,10 +75,4 @@ app.get("/api/dashboard/test", (req, res) => {
   })
 })
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`)
-  console.log(`📊 Test endpoints:`)
-  console.log(`   - Health: http://localhost:${PORT}/health`)
-  console.log(`   - Login: POST http://localhost:${PORT}/api/auth/login`)
-  console.log(`   - Dashboard: http://localhost:${PORT}/api/dashboard/test`)
-})
+app.listen(PORT)

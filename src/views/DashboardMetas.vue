@@ -907,7 +907,6 @@ watch(allUsers, (newUsers) => {
 
 // Enhanced data fetching functions with proper error handling
 const fetchAllData = async () => {
-  console.log('🔄 Starting fetchAllData with hierarchy support...')
   loading.value = true
   error.value = null
 
@@ -918,7 +917,6 @@ const fetchAllData = async () => {
       fetchUsers(),
       fetchTeamLeaders(),
     ])
-    console.log('✅ All data fetched successfully with hierarchy support')
   } catch (err) {
     console.error('❌ Error in fetchAllData:', err)
     error.value = err.response?.data?.message || err.message || 'Erro ao carregar dados'
@@ -928,7 +926,6 @@ const fetchAllData = async () => {
 }
 
 const fetchGoals = async () => {
-  console.log('🔄 Fetching goals with hierarchy support...')
   try {
     const periodParam = selectedPeriod.value || undefined
     const start = selectedPeriod.value ? undefined : customStart.value || undefined
@@ -936,7 +933,6 @@ const fetchGoals = async () => {
     const supervisor = selectedLeader.value || undefined
     const tipo = selectedGoalType.value || undefined
     const { data } = await goalsService.getGoals(periodParam, start, end, supervisor, tipo)
-    console.log('✅ Goals fetched with hierarchy:', data)
 
     // Normalize goal IDs in case the backend returns `_id`
     const normalizeGoals = (goalArray) =>
@@ -968,10 +964,8 @@ const fetchGoalsWithLoading = async () => {
 }
 
 const fetchUsers = async () => {
-  console.log('🔄 Fetching users with hierarchy support...')
   try {
     const { data } = await userService.getUsers()
-    console.log('✅ Users fetched with hierarchy:', data)
 
     // Ensure data is an array
     if (Array.isArray(data)) {
@@ -988,10 +982,8 @@ const fetchUsers = async () => {
 }
 
 const fetchTeamLeaders = async () => {
-  console.log('🔄 Fetching team leaders with hierarchy support...')
   try {
     const { data } = await teamLeaderService.getTeamLeaders()
-    console.log('✅ Team leaders fetched with hierarchy:', data)
 
     // Ensure data is an array
     if (Array.isArray(data)) {
@@ -1010,7 +1002,6 @@ const fetchTeamLeaders = async () => {
 }
 
 const onLeaderChange = async () => {
-  console.log('🔄 Leader changed with hierarchy support:', currentGoal.value.usuario_id)
 
   if (!currentGoal.value.usuario_id) {
     teamMembers.value = []
@@ -1022,7 +1013,6 @@ const onLeaderChange = async () => {
   try {
     // Use the new API endpoint to get team members
     const { data } = await userService.getUserTeam(currentGoal.value.usuario_id)
-    console.log('👥 Team members fetched from API:', data)
 
     // Filter allowed roles for distribution
     const filteredMembers = Array.isArray(data) ? data.filter(member =>
@@ -1070,7 +1060,6 @@ const onLeaderChange = async () => {
     })
 
     teamMembers.value = processedMembers
-    console.log('✅ Team members processed with hierarchy:', teamMembers.value.length)
 
   } catch (err) {
     console.error('❌ Error in onLeaderChange:', err)
@@ -1092,7 +1081,6 @@ const getCurrentGoalValue = (userId) => {
 }
 
 const updateMemberGoal = (memberId, value) => {
-  console.log('🔄 Updating member goal:', memberId, value)
 
   if (!Array.isArray(teamMembers.value)) {
     console.error('❌ teamMembers.value is not an array:', teamMembers.value)
@@ -1291,7 +1279,6 @@ const autoAdjustRemainder = () => {
 }
 
 const openGoalModal = (type, goal = null) => {
-  console.log('🔄 Opening goal modal with hierarchy support:', type, goal)
 
   modal.type = type
   if (goal) {
@@ -1349,7 +1336,6 @@ const viewGoalDetails = (goal) => {
 }
 
 const saveGoal = async () => {
-  console.log('🔄 Saving goal with hierarchy support...')
 
   saving.value = true
 
@@ -1482,7 +1468,6 @@ const saveGoal = async () => {
     closeModal()
     loading.value = true
     await fetchGoals()
-    console.log('✅ Goal saved successfully with hierarchy support')
   } catch (err) {
     console.error("❌ Error saving goal:", err)
     const base = err.response?.data?.message || 'Falha ao salvar a meta.'
@@ -1507,7 +1492,6 @@ const deleteGoal = async (type, id) => {
       await goalsService.deleteGoal(type, id)
       loading.value = true
       await fetchGoals()
-      console.log('✅ Goal deleted successfully')
     } catch (err) {
       console.error("❌ Error deleting goal:", err)
       alert("Falha ao excluir a meta.")
@@ -1674,7 +1658,6 @@ const getDifferenceClass = (goal) => {
 
 // Initialize data on component mount
 onMounted(() => {
-  console.log('🚀 Component mounted, fetching data with hierarchy support...')
   fetchAllData()
 })
 

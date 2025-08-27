@@ -18,7 +18,6 @@ const pool = new Pool({
   ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 })
 
-pool.on("connect", () => console.log("✅ Connected to PostgreSQL database"))
 pool.on("error", (err) => console.error("💥 Database connection error:", err))
 
 // Middleware
@@ -30,10 +29,6 @@ app.use(
 )
 app.use(compression())
 app.use(express.json())
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`)
-  next()
-})
 
 // Auth Middleware
 const authenticateToken = (req, res, next) => {
@@ -580,7 +575,6 @@ app.get(
 
 // Get supervisors list
 app.get("/api/supervisors", authenticateToken, authorize("admin", "gerente_comercial"), async (req, res) => {
-  console.log("--- Supervisors API: GET /api/supervisors started ---")
   try {
     const supervisorsQuery = `
       SELECT DISTINCT id, name
@@ -590,7 +584,6 @@ app.get("/api/supervisors", authenticateToken, authorize("admin", "gerente_comer
     `
     const supervisors = await pool.query(supervisorsQuery)
 
-    console.log("✅ Supervisors: Fetched", supervisors.rows.length, "supervisors")
     res.json(supervisors.rows)
   } catch (error) {
     console.error("❌ Supervisors: Error fetching supervisors:", error.message)
@@ -607,7 +600,6 @@ app.get(
   authenticateToken,
   authorize("admin", "gerente_comercial", "supervisor", "parceiro_comercial", "representante_premium"),
   async (req, res) => {
-    console.log("--- Performance API: GET /api/performance/team started ---")
     try {
       const { period, startDate, endDate } = req.query
       const supervisor = req.query.supervisorId || req.query.supervisor
@@ -616,8 +608,6 @@ app.get(
         startDate,
         endDate,
       )
-
-      console.log("📊 Team Performance: Date range:", { dateStart, dateEnd, supervisor })
 
       // Build supervisor filter
       let supervisorFilter = ""
@@ -849,8 +839,6 @@ app.get(
         }
       })
 
-      console.log("✅ Team Performance: Processed", formattedTeamMembers.length, "team members")
-
       res.json({
         teamStats: {
           totalMembers,
@@ -883,13 +871,10 @@ app.get(
 app.get("/api/performance/representative/:id", authenticateToken,
   authorize("admin", "gerente_comercial", "supervisor", "parceiro_comercial", "representante_premium", "representante", "vendedor", "preposto"),
   async (req, res) => {
-    console.log("--- Performance API: GET /api/performance/representative started ---")
     try {
       const { id } = req.params
       const { period, startDate, endDate } = req.query
       const { startDate: dateStart, endDate: dateEnd } = getDateRange(period, startDate, endDate)
-
-      console.log("📊 Representative Performance: User ID:", id, "Date range:", { dateStart, dateEnd })
 
       // Get representative basic info
       const userQuery = `
@@ -1073,7 +1058,6 @@ app.get("/api/performance/representative/:id", authenticateToken,
         period: { startDate: dateStart, endDate: dateEnd },
       }
 
-      console.log("✅ Representative Performance: Processed data for", representative.name)
       res.json(response)
     } catch (error) {
       console.error("❌ Representative Performance: Error:", error.message)
@@ -1091,7 +1075,6 @@ app.get(
   authenticateToken,
   authorize("admin", "gerente_comercial", "supervisor", "representante_premium"),
   async (req, res) => {
-  console.log("--- Goals API: GET /api/goals started ---")
   try {
     const { period, startDate: start, endDate: end, supervisorId, goalType } = req.query
 
@@ -1100,8 +1083,6 @@ app.get(
       supervisorId && supervisorId !== 'all'
         ? Number.parseInt(supervisorId)
         : null
-
-    console.log("📅 Goals: Date range:", { startDate, endDate })
 
     // Check if tables exist first
     const tableCheckQuery = `
@@ -1116,10 +1097,8 @@ app.get(
     `
 
     const tableCheck = await pool.query(tableCheckQuery)
-    console.log("🔍 Goals: Table check:", tableCheck.rows[0])
 
     if (!tableCheck.rows[0].metas_gerais_exists || !tableCheck.rows[0].metas_individuais_exists) {
-      console.log("❌ Goals: Tables do not exist, returning empty data")
       return res.json({
         generalGoals: [],
         individualGoals: [],
@@ -1143,7 +1122,6 @@ app.get(
     }
     generalGoalsQuery += ' ORDER BY g.data_inicio DESC'
     const generalResult = await pool.query(generalGoalsQuery, generalQueryParams)
-    console.log("✅ Goals: Fetched", generalResult.rows.length, "general goals")
 
     const supervisorIds = [...new Set(generalResult.rows.map((g) => g.usuario_id))]
     const teamMembersMap = await getTeamMembersBulk(supervisorIds)
@@ -1229,7 +1207,6 @@ app.get(
     }
     individualGoalsQuery += ' ORDER BY u.name, m.data_inicio DESC'
     const individualResult = await pool.query(individualGoalsQuery, individualParams)
-    console.log("✅ Goals: Fetched", individualResult.rows.length, "individual goals")
 
     const enhancedIndividual = individualResult.rows.map((goal) => ({
       ...goal,
@@ -1648,10 +1625,8 @@ app.put("/api/goals/:type/:id", authenticateToken, authorize("admin", "gerente_c
 
 // Delete goal
 app.delete("/api/goals/:type/:id", authenticateToken, authorize("admin", "gerente_comercial"), async (req, res) => {
-  console.log("--- Goals API: DELETE /api/goals/:type/:id started ---");
   try {
     const { type, id } = req.params
-    console.log("🗑️ Goals: Deleting goal:", { type, id })
 
     if (type === "general") {
       // Fetch goal periods for this leader so we can remove individual goals
@@ -1707,7 +1682,6 @@ app.delete("/api/goals/:type/:id", authenticateToken, authorize("admin", "gerent
       return res.status(400).json({ message: "Invalid goal type" })
     }
 
-    console.log("✅ Goals: Goal deleted successfully")
     res.status(204).send()
   } catch (error) {
     console.error("❌ Goals: Error deleting goal:", error.message)
@@ -1720,7 +1694,6 @@ app.delete("/api/goals/:type/:id", authenticateToken, authorize("admin", "gerent
 
 // Get available goal periods for a user
 app.get("/api/goals/periods/:userId", authenticateToken, async (req, res) => {
-  console.log("--- Goals API: GET /api/goals/periods started ---");
   try {
     const { userId } = req.params;
     const query = `
@@ -1746,13 +1719,10 @@ app.get("/api/goals/periods/:userId", authenticateToken, async (req, res) => {
 
 // Get goal tracking for seller
 app.get("/api/goals/tracking/seller/:id", authenticateToken, async (req, res) => {
-  console.log("--- Goals API: GET /api/goals/tracking/seller started ---")
   try {
     const { id } = req.params
     const { period, startDate: start, endDate: end } = req.query
     const { startDate, endDate } = getDateRange(period, start, end)
-
-    console.log("📊 Goals Tracking: User ID:", id, "Period:", period)
 
     // Get individual goals for this user
     const individualGoalsQuery = `
@@ -1823,7 +1793,6 @@ app.get("/api/goals/tracking/seller/:id", authenticateToken, async (req, res) =>
     const totalTarget = allGoals.reduce((s, g) => s + parseFloat(g.valor_meta), 0)
     const totalAchieved = allGoals.reduce((s, g) => s + (g.achieved || 0), 0)
     const overallProgress = totalTarget > 0 ? (totalAchieved / totalTarget) * 100 : 0
-    console.log("✅ Goals Tracking: Processed", allGoals.length, "goals")
 
     res.json({
       goals: allGoals,
@@ -1848,7 +1817,6 @@ app.get(
   authenticateToken,
   authorize("admin", "gerente_comercial", "supervisor", "parceiro_comercial", "representante_premium", "representante", "vendedor", "preposto"),
   async (req, res) => {
-    console.log("--- Goals API: GET /api/goals/team/:id started ---")
     try {
       const { id } = req.params
       const { period, startDate: start, endDate: end, status } = req.query
@@ -1955,7 +1923,6 @@ app.get(
 
 // Get users for goal assignment
 app.get("/api/users", authenticateToken, authorize("admin", "gerente_comercial"), async (req, res) => {
-  console.log("--- Users API: GET /api/users started ---")
   try {
     const usersQuery = `
       SELECT id, name, email, role, supervisor, children, is_active
@@ -1965,7 +1932,6 @@ app.get("/api/users", authenticateToken, authorize("admin", "gerente_comercial")
     `
 
     const result = await pool.query(usersQuery)
-    console.log("✅ Users: Fetched", result.rows.length, "users")
 
     res.json(result.rows)
   } catch (error) {
@@ -1979,7 +1945,6 @@ app.get("/api/users", authenticateToken, authorize("admin", "gerente_comercial")
 
 // Get user by ID with hierarchy information
 app.get("/api/users/:id", authenticateToken, async (req, res) => {
-  console.log("--- Users API: GET /api/users/:id started ---")
   try {
     const { id } = req.params
 
@@ -2022,7 +1987,6 @@ app.get("/api/users/:id", authenticateToken, async (req, res) => {
       team_members_count: parseJsonField(user.children).length,
     }
 
-    console.log("✅ Users: Fetched user:", enhancedUser.name)
     res.json(enhancedUser)
   } catch (error) {
     console.error("❌ Users: Error fetching user:", error.message)
@@ -2035,7 +1999,6 @@ app.get("/api/users/:id", authenticateToken, async (req, res) => {
 
 // Get user's team (for supervisors)
 app.get("/api/users/:id/team", authenticateToken, async (req, res) => {
-  console.log("--- Users API: GET /api/users/:id/team started ---")
   try {
     const { id } = req.params
 
@@ -2101,11 +2064,6 @@ app.get("/api/users/:id/team", authenticateToken, async (req, res) => {
       }
     }
 
-    console.log(
-      "✅ Users: Fetched",
-      enhancedMembers.length,
-      "team members including hierarchy",
-    )
     res.json(enhancedMembers)
   } catch (error) {
     console.error("❌ Users: Error fetching team:", error.message)
@@ -2116,13 +2074,11 @@ app.get("/api/users/:id/team", authenticateToken, async (req, res) => {
 // Dashboard endpoints (keeping existing ones)
 app.get("/api/dashboard/vendedor/:id", authenticateToken, async (req, res) => {
   try {
-    console.log("📊 Vendedor dashboard request:", { id: req.params.id, ...req.query })
     const { id } = req.params
     const { period, startDate: start, endDate: end } = req.query
 
 
     const { startDate, endDate } = getDateRange(period, start, end)
-    console.log("📅 Date range:", { startDate, endDate })
 
     // Get proposals data
     const proposalsQuery = `

@@ -10,22 +10,13 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 })
 
-// Test database connection
-pool.on("connect", () => {
-  console.log("✅ Database pool connected")
-})
-
 pool.on("error", (err) => {
   console.error("💥 Database pool error:", err)
 })
 
 const query = async (text, params) => {
-  console.log("🔍 Executing query:", text.substring(0, 100) + "...")
-  const start = Date.now()
   try {
     const res = await pool.query(text, params)
-    const duration = Date.now() - start
-    console.log("✅ Query executed successfully in", duration, "ms")
     return res
   } catch (error) {
     console.error("❌ Query error:", error.message)
