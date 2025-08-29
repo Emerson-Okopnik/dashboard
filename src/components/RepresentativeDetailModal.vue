@@ -344,11 +344,21 @@ const emit = defineEmits(['close'])
 
 const uniqueProposals = computed(() => {
   if (!props.details?.proposals) return []
+
+  const proposals = props.details.proposals.filter(
+    (p) => !(p.status === 'Convertida' && p.saleStatus === 'suspenso')
+  )
+
   const groups = {}
-  for (const p of props.details.proposals) {
+  const seenIds = new Set()
+
+  for (const p of proposals) {
+    if (seenIds.has(p.id)) continue
+    seenIds.add(p.id)
     if (!groups[p.clientPhone]) groups[p.clientPhone] = []
     groups[p.clientPhone].push(p)
   }
+
   const result = []
   Object.values(groups).forEach((list) => {
     list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -357,7 +367,7 @@ const uniqueProposals = computed(() => {
     )
     if (generatedSales.length) {
       result.push(...generatedSales)
-    } else {
+    } else if (list[0]) {
       result.push(list[0])
     }
   })
