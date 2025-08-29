@@ -1,7 +1,6 @@
 import { defineStore } from "pinia"
 import axios from "axios"
 import api from "../services/api"
-import { deleteCookie } from "../utils/cookies"
 
 function getStoredUser() {
   try {
@@ -91,11 +90,6 @@ async login(credentials) {
       this.token = null
       localStorage.removeItem("token")
       localStorage.removeItem("user")
-      document.cookie
-        .split(";")
-        .map((c) => c.split("=")[0].trim())
-        .filter((name) => name.startsWith("dashboard_"))
-        .forEach((name) => deleteCookie(name))
       delete axios.defaults.headers.common["Authorization"]
       delete api.defaults.headers.common["Authorization"]
     },
