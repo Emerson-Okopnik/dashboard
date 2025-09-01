@@ -317,7 +317,53 @@
       <!-- ---------- TABELA DE PROPOSTAS ---------- -->
       <div class="bg-white shadow rounded-lg mt-6">
         <div class="px-4 py-5 sm:p-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">Propostas Detalhadas</h3>
+          <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+            Propostas Detalhadas ({{ filteredProposals.length }})
+          </h3>
+          <div
+            class="mb-4 flex flex-col sm:flex-row sm:items-center sm:space-x-4 space-y-2 sm:space-y-0"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="text-sm font-medium text-gray-700">Origem:</label>
+              <select
+                v-model="originFilter"
+                class="border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="all">Todos</option>
+                <option value="self">{{ selfLabel }}</option>
+                <option value="child">Usuários Filhos</option>
+                <option value="converted">Convertida</option>
+              </select>
+            </div>
+            <div
+              v-if="supervisorOptions.length > 1"
+              class="flex flex-wrap items-center gap-2"
+            >
+              <label class="text-sm font-medium text-gray-700">Supervisor:</label>
+              <select
+                v-model="supervisorFilter"
+                class="border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="all">Todos</option>
+                <option
+                  v-for="sup in supervisorOptions"
+                  :key="sup.id"
+                  :value="sup.id"
+                >
+                  {{ sup.name }}
+                </option>
+              </select>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="text-sm font-medium text-gray-700">Pesquisar:</label>
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Nome ou telefone"
+                class="border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+          </div>
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
               <thead class="bg-gray-50">
@@ -340,26 +386,29 @@
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
-                 <tr v-for="p in paginatedProposals" :key="p.id">
-                  <td class="px-6 py-4 whitespace-normal break-words text-sm font-medium text-gray-900">
-                    {{ p.clientName + ' #' + p.id }}
+                <tr v-for="proposal in sortedProposals" :key="proposal.id">
+                  <td class="px-6 py-4  whitespace-normal break-words text-sm font-medium text-gray-900">
+                    {{ proposal.clientName + ' #' + proposal.id }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {{ formatPhone(p.clientPhone) }}
+                    {{ formatPhone(proposal.clientPhone) }}
+                  </td>
+                  <td class="px-6 py-4 whitespace-normal break-words text-sm text-gray-900">
+                    {{ proposal.proposerName }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    R$ {{ formatCurrency(p.totalPrice) }}
+                    R$ {{ formatCurrency(proposal.totalPrice) }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <span
-                      :class="p.hasGeneratedSale ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'"
+                      :class="proposal.hasGeneratedSale ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'"
                       class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
                     >
-                      {{ p.status }}
+                      {{ proposal.status }}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {{ formatDate(p.createdAt) }}
+                    {{ formatDate(proposal.createdAt) }}
                   </td>
                 </tr>
               </tbody>
@@ -450,22 +499,121 @@ const proposals = ref([])
 const currentPage = ref(1)
 const pageSize = ref(10)
 
-const paginatedProposals = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return proposals.value.slice(start, start + pageSize.value)
+const normalize = (text) => {
+  return (text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+const originFilter = ref('all')
+const searchQuery = ref('')
+const supervisorFilter = ref('all')
+
+const uniqueProposals = computed(() => {
+  const list = proposals.value.filter(
+    (p) => !(p.status === 'Convertida' && p.saleStatus === 'suspenso')
+  )
+
+  const groups = {}
+  const seenIds = new Set()
+
+  for (const p of list) {
+    if (seenIds.has(p.id)) continue
+    seenIds.add(p.id)
+    if (!groups[p.clientPhone]) groups[p.clientPhone] = []
+    groups[p.clientPhone].push(p)
+  }
+
+  const result = []
+  Object.values(groups).forEach((arr) => {
+    arr.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    const generated = arr.filter(
+      (p) => p.hasGeneratedSale && p.saleStatus !== 'suspenso'
+    )
+    if (generated.length) {
+      result.push(...generated)
+    } else if (arr[0]) {
+      result.push(arr[0])
+    }
+  })
+  return result
 })
 
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(proposals.value.length / pageSize.value))
 )
 
+const supervisorOptions = computed(() => {
+  const map = new Map()
+  uniqueProposals.value.forEach((p) => {
+    if (p.supervisorId) {
+      map.set(
+        p.supervisorId,
+        p.supervisorName || `Supervisor #${p.supervisorId}`
+      )
+    }
+  })
+  return Array.from(map, ([id, name]) => ({ id, name }))
+})
+
 const nextPage = () => {
   if (currentPage.value < totalPages.value) currentPage.value++
 }
 
+const selfLabel = computed(() => {
+  const role = authStore.user?.role || 'supervisor'
+  return role === 'parceiro_comercial' ? 'Parceiro' : 'Supervisor'
+})
+
 const prevPage = () => {
   if (currentPage.value > 1) currentPage.value--
 }
+
+const supervisorFilteredProposals = computed(() => {
+  if (supervisorFilter.value === 'all') return uniqueProposals.value
+  return uniqueProposals.value.filter(
+    (p) => String(p.supervisorId) === String(supervisorFilter.value)
+  )
+})
+
+const originFilteredProposals = computed(() => {
+  const list = supervisorFilteredProposals.value
+  if (originFilter.value === 'all') return list
+  if (originFilter.value === 'converted') {
+    return list.filter(
+      (p) => p.status === 'Convertida' && p.saleStatus !== 'suspenso'
+    )
+  }
+  return list.filter((p) =>
+    originFilter.value === 'self' ? p.origin === 'self' : p.origin === 'child'
+  )
+})
+
+const filteredProposals = computed(() => {
+  const raw = searchQuery.value.trim()
+  if (!raw) return originFilteredProposals.value
+
+  const tokens = raw.split(/\s+/).filter(Boolean)
+
+  return originFilteredProposals.value.filter((p) =>
+    tokens.every((token) => {
+      const normalized = normalize(token)
+      const digits = token.replace(/\D/g, '')
+      const nameMatch = normalize(p.clientName).includes(normalized)
+      const phoneMatch = digits
+        ? p.clientPhone.replace(/\D/g, '').includes(digits)
+        : false
+      return nameMatch || phoneMatch
+    })
+  )
+})
+
+const sortedProposals = computed(() => {
+  return [...filteredProposals.value].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  )
+})
 
 const proposalGoal = computed(() => {
   const goals = goalsData.value.goals.filter(g => g.tipo_meta === 'propostas')
