@@ -386,7 +386,7 @@
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
-                <tr v-for="proposal in sortedProposals" :key="proposal.id">
+                <tr v-for="proposal in paginatedProposals" :key="proposal.id">
                   <td class="px-6 py-4  whitespace-normal break-words text-sm font-medium text-gray-900">
                     {{ proposal.clientName + ' #' + proposal.id }}
                   </td>
@@ -540,10 +540,6 @@ const uniqueProposals = computed(() => {
   return result
 })
 
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(proposals.value.length / pageSize.value))
-)
-
 const supervisorOptions = computed(() => {
   const map = new Map()
   uniqueProposals.value.forEach((p) => {
@@ -614,6 +610,15 @@ const sortedProposals = computed(() => {
     (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   )
 })
+
+const paginatedProposals = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return sortedProposals.value.slice(start, start + pageSize.value)
+})
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredProposals.value.length / pageSize.value))
+)
 
 const proposalGoal = computed(() => {
   const goals = goalsData.value.goals.filter(g => g.tipo_meta === 'propostas')
@@ -864,7 +869,7 @@ watch([selectedPeriod, customStart, customEnd], () => {
   debouncedFetchAll()
 })
 
-watch([proposals, pageSize], () => {
+watch([filteredProposals, pageSize], () => {
   currentPage.value = 1
 })
 
