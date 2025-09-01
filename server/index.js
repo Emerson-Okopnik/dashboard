@@ -1150,7 +1150,7 @@ app.get("/api/performance/representative/:id", authenticateToken,
 app.get(
   "/api/goals",
   authenticateToken,
-  authorize("admin", "gerente_comercial", "supervisor", "representante_premium"),
+  authorize("admin", "gerente_comercial", "supervisor", "representante_premium", "parceiro_comercial"),
   async (req, res) => {
   try {
     const { period, startDate: start, endDate: end, supervisorId, goalType } = req.query
