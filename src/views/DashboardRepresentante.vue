@@ -330,8 +330,6 @@
                 class="border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="all">Todos</option>
-                <option value="self">{{ selfLabel }}</option>
-                <option value="child">Usuários Filhos</option>
                 <option value="converted">Convertida</option>
               </select>
             </div>
@@ -392,9 +390,6 @@
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {{ formatPhone(proposal.clientPhone) }}
-                  </td>
-                  <td class="px-6 py-4 whitespace-normal break-words text-sm text-gray-900">
-                    {{ proposal.proposerName }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     R$ {{ formatCurrency(proposal.totalPrice) }}
