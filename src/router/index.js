@@ -14,7 +14,7 @@ const routes = [
   {
     path: "/dashboard/vendedor",
     name: "DashboardVendedor",
-    component: () => import("../views/DashboardVendedor.vue"),
+    component: () => import("../views/DashboardRepresentante.vue"),
     meta: { requiresAuth: true, role: "vendedor" },
   },
   {

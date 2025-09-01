@@ -398,9 +398,9 @@ const vendasValidasProgress = computed(() => {
 })
 
 const teamTicketMedio = computed(() => {
-  const totalVendas = dashboardData.value?.indicadores?.totalVendas || 0
-  const valorVendas = dashboardData.value?.indicadores?.faturamentoTotal || 0
-  if (!valorVendas) return 0
+  const totalVendas = dashboardData.value?.resumo?.propostasConvertidas || 0
+  const valorVendas = dashboardData.value?.resumo?.faturamentoTotal || 0
+  if (!totalVendas) return 0
   return valorVendas / totalVendas
 })
 
