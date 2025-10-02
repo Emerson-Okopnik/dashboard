@@ -458,7 +458,7 @@ app.get(
           SELECT u.id
           FROM clone_users_apprudnik u
           WHERE u.is_active = true
-            AND u.role IN ('vendedor', 'representante', 'parceiro_comercial', 'supervisor', 'preposto', 'representante_premium')
+            AND u.role IN ('vendedor', 'representante', 'parceiro_comercial', 'supervisor', 'preposto', 'representante_premium', 'gerente_comercial', 'admin')
             ${supervisorFilter}
         ),
         propostas_agrupadas AS (
