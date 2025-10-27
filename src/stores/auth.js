@@ -32,11 +32,18 @@ async login(credentials) {
       password: credentials.password,
     }
 
+    const tenantId = credentials.tenant_id ?? credentials.tenantId ?? credentials.tenant ?? "1"
+
     // Primeiro, tenta login na API externa
     const externalResponse = await axios.post(
       "https://www.apprudnik.com.br/api/auth/login",
       remoteCredentials,
-      { validateStatus: () => true },
+      {
+        validateStatus: () => true,
+        headers: {
+          "x-tenant-id": String(tenantId),
+        },
+      }
     )
 
     if (externalResponse.status === 401) {
