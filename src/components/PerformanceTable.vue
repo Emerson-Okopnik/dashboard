@@ -224,13 +224,16 @@ const roleOptions = computed(() => {
 })
 
 const fetchData = async () => {
-  const params = { ...props.filters, page: currentPage.value, limit: perPage.value }
+  const params = { ...props.filters, page: currentPage.value, limit: perPage.value, is_active: true }
   if (nameFilter.value) params.name = nameFilter.value
   if (roleFilter.value) params.role = roleFilter.value
   try {
     const { data } = await performanceService.getTeamPerformance(params)
-    teamMembers.value = data.teamMembers || []
-    totalMembers.value = data.teamStats?.totalMembers || 0
+    const activeMembers = (data.teamMembers || []).filter((member) => member?.is_active !== false)
+    teamMembers.value = activeMembers
+    const totalActiveMembers =
+      data.teamStats?.totalActiveMembers ?? data.teamStats?.totalMembers ?? activeMembers.length
+    totalMembers.value = totalActiveMembers
   } catch (error) {
     console.error('Erro ao carregar performance da equipe:', error)
   }
