@@ -36,7 +36,7 @@ async login(credentials) {
 
     // Primeiro, tenta login na API externa
     const externalResponse = await axios.post(
-      "https://www.apprudnik.com.br/api/auth/login",
+      "https://api.appolo.solar/api/auth/login",
       remoteCredentials,
       {
         validateStatus: () => true,
